@@ -1,0 +1,360 @@
+import { useState, useCallback, useEffect } from 'react';
+import { Button } from '../ui/button';
+import { Video } from '@/lib/types';
+import { useToast } from '../ui/use-toast';
+import { Cloudinary } from '@cloudinary/url-gen';
+
+// Declare the Cloudinary widget type
+declare global {
+  interface Window {
+    cloudinary: any;
+  }
+}
+
+// Function to load the Cloudinary widget script
+const loadCloudinaryScript = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (window.cloudinary) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://widget.cloudinary.com/v2.0/global/all.js';
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = (error) => reject(error);
+    document.head.appendChild(script);
+  });
+};
+
+// Create a Cloudinary instance
+const cld = new Cloudinary({
+  cloud: {
+    cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'del0trhdj',
+    apiKey: import.meta.env.VITE_CLOUDINARY_API_KEY,
+    apiSecret: import.meta.env.VITE_CLOUDINARY_API_SECRET
+  }
+});
+
+interface VideoUploadProps {
+  onUploadSuccess: (video: Partial<Video>) => void;
+  onUploadError?: (error: any) => void;
+}
+
+interface CloudinaryUploadResult {
+  event: string;
+  info: {
+    original_filename: string;
+    secure_url: string;
+    thumbnail_url?: string;
+    duration?: number;
+    [key: string]: any;
+  };
+}
+
+export function VideoUpload({ onUploadSuccess, onUploadError }: VideoUploadProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const { toast } = useToast();
+
+  // Load Cloudinary script on component mount
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadScript = async () => {
+      try {
+        console.log('Loading Cloudinary script...');
+        await loadCloudinaryScript();
+        console.log('Cloudinary script loaded successfully');
+        if (isMounted) {
+          setIsScriptLoaded(true);
+          console.log('Script loaded state updated');
+        }
+      } catch (error) {
+        console.error('Failed to load Cloudinary script:', error);
+        if (isMounted) {
+          const errorMsg = 'Failed to load uploader. Please refresh the page and try again.';
+          console.error(errorMsg);
+          toast({
+            title: 'Uploader Error',
+            description: errorMsg,
+            variant: 'destructive',
+          });
+        }
+      }
+    };
+
+    // Only load script if window is available (client-side)
+    if (typeof window !== 'undefined') {
+      if (window.cloudinary) {
+        console.log('Cloudinary already loaded');
+        setIsScriptLoaded(true);
+      } else {
+        console.log('Cloudinary not loaded, loading now...');
+        loadScript();
+      }
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleUploadSuccess = (error: any, result: CloudinaryUploadResult) => {
+    if (error) {
+      handleUploadError(error);
+      return;
+    }
+
+    setIsUploading(false);
+    setUploadProgress(100);
+    
+    const videoData: Partial<Video> = {
+      title: result.info.original_filename,
+      description: '',
+      videoUrl: result.info.secure_url,
+      thumbnailUrl: result.info.thumbnail_url || '',
+      duration: Math.round(result.info.duration || 0),
+      tags: [],
+      category: 'Frontend', // Default category
+      difficulty: 'Beginner', // Default difficulty
+    };
+
+    onUploadSuccess(videoData);
+    
+    toast({
+      title: 'Upload successful!',
+      description: 'Your video has been uploaded successfully.',
+      variant: 'default',
+    });
+  };
+
+  const handleUploadError = (error: any) => {
+    console.error('Upload error:', error);
+    setIsUploading(false);
+    setUploadProgress(0);
+    
+    if (onUploadError) {
+      onUploadError(error);
+    }
+    
+    toast({
+      title: 'Upload failed',
+      description: 'There was an error uploading your video. Please try again.',
+      variant: 'destructive',
+    });
+  };
+
+  const handleUploadStart = () => {
+    setIsUploading(true);
+    setUploadProgress(0);
+  };
+
+  const handleProgress = (p: any) => {
+    setUploadProgress(p.percent);
+  };
+
+  // Create the upload widget
+  const openWidget = useCallback(() => {
+    console.log('Opening upload widget...');
+    
+    if (!isScriptLoaded) {
+      console.log('Script not loaded, current state:', { isScriptLoaded, cloudinary: window.cloudinary });
+      const errorMsg = 'Uploader is still initializing. Please wait a moment and try again.';
+      console.error(errorMsg);
+      toast({
+        title: 'Uploader Initializing',
+        description: errorMsg,
+      });
+      return;
+    }
+    
+    if (!window.cloudinary) {
+      const errorMsg = 'Cloudinary widget not loaded. Please refresh the page and try again.';
+      console.error(errorMsg);
+      toast({
+        title: 'Uploader Error',
+        description: errorMsg,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'codecast_uploads';
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'del0trhdj';
+    
+    console.log('Cloudinary Config:', { cloudName, uploadPreset });
+    
+    try {
+      // Initialize and open the Cloudinary upload widget
+      const widget = window.cloudinary.createUploadWidget(
+        {
+          cloudName,
+          uploadPreset,
+          folder: 'codecast/videos',
+          sources: ['local'], // Simplified to local uploads only for now
+          multiple: false,
+          resourceType: 'video',
+          maxFileSize: 5000000, // 5GB
+          clientAllowedFormats: ['mp4', 'mov'], // Reduced formats for testing
+          maxVideoFileSize: 5000000, // 5GB
+          showAdvancedOptions: false, // Simplified UI
+          defaultSource: 'local',
+          styles: {
+            palette: {
+              window: '#FFFFFF',
+              sourceBg: '#F4F4F5',
+              windowBorder: '#90a0b3',
+              tabIcon: '#0078FF',
+              inactiveTabIcon: '#555a5f',
+              menuIcons: '#555a5f',
+              link: '#0078FF',
+              action: '#FF620C',
+              inProgress: '#0078FF',
+              complete: '#20B832',
+              error: '#E63737',
+              textDark: '#000000',
+              textLight: '#FCFFFD'
+            },
+            fonts: {
+              default: null,
+              '"IBM Plex Sans", sans-serif': {
+                url: 'https://fonts.googleapis.com/css?family=IBM+Plex+Sans',
+                active: true
+              }
+            }
+          }
+        },
+        (error: any, result: any) => {
+          console.log('Upload callback:', { event: result?.event, error, result });
+          
+          if (error) {
+            console.error('Upload error:', error);
+            handleUploadError(error);
+            return;
+          }
+
+          if (result.event === 'success') {
+            console.log('Upload successful:', result.info);
+            handleUploadSuccess(null, result);
+          } else if (result.event === 'close') {
+            console.log('User closed the upload widget');
+            setIsUploading(false);
+            setUploadProgress(0);
+          } else if (result.event === 'display-changed') {
+            console.log('Widget display changed:', result.info);
+          }
+        }
+      );
+      
+      // Set uploading state and open the widget
+      console.log('Widget created, opening...');
+      setIsUploading(true);
+      setUploadProgress(0);
+      widget.open();
+      
+    } catch (error) {
+      console.error('Error creating upload widget:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to initialize uploader. Please try again.',
+
+      if (result.event === 'success') {
+        console.log('Upload successful:', result.info);
+        handleUploadSuccess(null, result);
+      } else if (result.event === 'close') {
+        console.log('User closed the upload widget');
+        setIsUploading(false);
+        setUploadProgress(0);
+      } else if (result.event === 'display-changed') {
+        console.log('Widget display changed:', result.info);
+      }
+    };
+    
+    return (
+      <div className="space-y-4">
+        <Button
+          onClick={() => {
+            console.log('Upload button clicked');
+            openWidget();
+          }}
+          disabled={isUploading || !isScriptLoaded}
+          className="w-full"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : !isScriptLoaded ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Initializing Uploader...
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Video
+            </>
+          )}
+        </Button>
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        )}
+        <p className="text-sm text-muted-foreground">
+          Supported formats: MP4, MOV (max 5GB)
+        </p>
+      </div>
+    );
+  }, [handleUploadSuccess, isScriptLoaded, isUploading, openWidget, uploadProgress]);
+
+  console.log('Render VideoUpload:', { isScriptLoaded, isUploading, uploadProgress });
+  
+  return (
+    <div className="space-y-4">
+      <Button
+        onClick={() => {
+          console.log('Upload button clicked');
+          openWidget();
+        }}
+        disabled={isUploading || !isScriptLoaded}
+        className="w-full"
+      >
+        {isUploading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Uploading...
+          </>
+        ) : !isScriptLoaded ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Initializing Uploader...
+          </>
+        ) : (
+          <>
+            <Upload className="mr-2 h-4 w-4" />
+            Upload Video
+          </>
+        )}
+      </Button>
+      {uploadProgress > 0 && uploadProgress < 100 && (
+        <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            className="h-full bg-primary transition-all duration-300"
+            style={{ width: `${uploadProgress}%` }}
+          />
+        </div>
+      )}
+      <p className="text-sm text-muted-foreground">
+        Supported formats: MP4, MOV (max 5GB)
+      </p>
+    </div>
+  );
+}

@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codecast-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3000}
+    networks:
+      - codecast-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Uncomment and configure these services as needed
+  # api:
+  #   build:
+  #     context: ./api
+  #     dockerfile: Dockerfile
+  #   container_name: codecast-api
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - DATABASE_URL=${DATABASE_URL}
+  #     - JWT_SECRET=${JWT_SECRET}
+  #   networks:
+  #     - codecast-network
+  #   depends_on:
+  #     - db
+
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: codecast-db
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_USER=${DB_USER:-postgres}
+  #     - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+  #     - POSTGRES_DB=${DB_NAME:-codecast}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - codecast-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: codecast-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - codecast-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  codecast-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
